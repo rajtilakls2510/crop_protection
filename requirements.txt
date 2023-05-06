@@ -1,0 +1,4 @@
+numpy~=1.24.3
+opencv-python~=4.7.0.72
+pandas~=2.0.1
+Flask~=2.3.2
