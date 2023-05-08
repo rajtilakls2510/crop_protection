@@ -14,12 +14,13 @@ cors = CORS(app)
 module1_data = pd.DataFrame({"time": [], "motion": [], "distance": []})
 module2_data = pd.DataFrame({"time": [], "motion": [], "distance": []})
 cam_data = pd.DataFrame({"time": [], "xmin": [], "ymin": [], "xmax": [], "ymax": [], "confidence": [], "class": []})
-severities = [0,0]
+severities = [0,1]
 
-cam_feed = None
-mod1_feed = {"motion": 0, "distance": 0.0, "history": []}
-mod2_feed = {"motion": 0, "distance": 0.0, "history": []}
+
+cam_feed = cv2.imread("placeholder.png")
 mod1_override, mod2_override = False, False
+mod1_feed = {"module": 1, "motion": 1, "distance": 10.0, "severity": severities[0], "manual": mod1_override, "history": [{"time": time.time(), "severity": 1}, {"time": time.time(), "severity": 2}, {"time": time.time(), "severity": 3}]}
+mod2_feed = {"module": 2, "motion": 0, "distance": 20.0, "severity": severities[1], "manual": mod2_override, "history": [{"time": time.time(), "severity": 1}, {"time": time.time(), "severity": 2}, {"time": time.time(), "severity": 3}]}
 
 
 module_lock = Lock()
@@ -64,28 +65,34 @@ def alarm_detector():
 
     # TODO: code to check if motion is detected and to calculate distance must be run in parallel for each module
 
-    return 1, 1
+    return 1, 0
 
 
 @app.route("/live", methods=["GET"])
 def live():
-    img = Image.fromarray(cam_feed.astype("uint8"))
-    rawBytes = io.BytesIO()
-    img.save(rawBytes, "JPEG")
-    rawBytes.seek(0)
-    img_base64 = base64.b64encode(rawBytes.read())
-    return jsonify({"cam": {"img": img_base64} if cam_feed else None, "modules": [mod1_feed, mod2_feed]})
+    if cam_feed is not None:
+        img = Image.fromarray(cam_feed.astype("uint8"))
+        rawBytes = io.BytesIO()
+        img.save(rawBytes, "JPEG")
+        rawBytes.seek(0)
+        img_base64 = base64.b64encode(rawBytes.read()).decode("ascii")
+
+    return jsonify({"cam": {"img": img_base64} if cam_feed is not None else None, "modules": [mod1_feed, mod2_feed]})
 
 
 @app.route("/override", methods=["POST"])
 def override():
     global mod1_override, mod2_override
     module = int(request.form["module"])
-    override = bool(request.form["override"])
+    override = request.form["override"] == "true"
+    print(mod1_override, mod2_override)
     if module == 1:
         mod1_override = override
+        mod1_feed["manual"] = mod1_override
     else:
         mod2_override = override
+        mod2_feed["manual"] = mod2_override
+    print(mod1_override, mod2_override)
     return "Done"
 
 
@@ -93,12 +100,15 @@ def override():
 def control():
     global severities
     module = int(request.form["module"])
-    control = bool(request.form["control"])
+    control = int(request.form["control"])
     if module == 1:
         severities[0] = control
+        mod1_feed["severity"] = severities[0]
     else:
         severities[1] = control
+        mod2_feed["severity"] = severities[1]
     return "Done"
+
 
 @app.route("/module", methods=["POST"])
 def module():
@@ -127,9 +137,11 @@ def module():
     if module == 1 and not mod1_override and new_severities[0] > 0 and severities[0] == 0:
         mod1_feed["history"].append({"time": time.time(), "severity": new_severities[0]})
         severities[0] = new_severities[0]
+        mod1_feed["severity"] = severities[0]
     if module == 2 and not mod2_override and new_severities[1] > 0 and severities[1] == 0:
         mod2_feed["history"].append({"time": time.time(), "severity": new_severities[1]})
         severities[1] = new_severities[1]
+        mod2_feed["severity"] = severities[1]
     module_lock.release()
     return jsonify({"severity": severities[0] if module == 1 else severities[1]})
 
