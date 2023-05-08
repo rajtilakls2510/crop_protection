@@ -14,12 +14,19 @@ cors = CORS(app)
 module1_data = pd.DataFrame({"time": [], "motion": [], "distance": []})
 module2_data = pd.DataFrame({"time": [], "motion": [], "distance": []})
 cam_data = pd.DataFrame({"time": [], "xmin": [], "ymin": [], "xmax": [], "ymax": [], "confidence": [], "class": []})
+severities = (0,0)
 
 module_lock = Lock()
 cam_lock = Lock()
 
 model = torch.hub.load("ultralytics/yolov5", "yolov5s")
 
+def alarm_detector():
+    global module1_data, module2_data, cam_data
+
+    # TODO: Process
+
+    return 1, 1
 
 @app.route("/", methods=["GET"])
 def sdf():
@@ -28,8 +35,8 @@ def sdf():
 
 @app.route("/module", methods=["POST"])
 def module():
-    global module1_data
-    global module2_data
+    global module1_data, module2_data, severities
+
     module = int(request.form["module"])
     motion = request.form["motion"]
     distance = request.form["distance"]
@@ -45,8 +52,9 @@ def module():
         module2_data = module2_data[module2_data.time >= (time.time() - 100)]
     module1_data.to_csv("mod1.csv", index=False)  # TODO: Comment in production
     module2_data.to_csv("mod2.csv", index=False)  # TODO: Comment in production
+    severities = alarm_detector()
     module_lock.release()
-    return jsonify({"severity": random.randint(a=0, b=3)})
+    return jsonify({"severity": severities[0] if module == 1 else severities[1]})
 
 
 @app.route("/cam", methods=["POST"])
