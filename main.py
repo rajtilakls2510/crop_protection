@@ -32,6 +32,38 @@ def alarm_detector():
 
     # TODO: Process
 
+    # Defining some of my own Hyperparameters
+    window_size = 15
+    motion_sensitivity = 3
+    camera_sensitivity = 3
+
+    # Record start and end timestamps for the current window
+    start_time = module1_data['time'].iloc[0]
+    end_time = start_time + pd.Timedelta(seconds=window_size)
+
+    # Filter mod1 dataframe to only include rows within the current window
+    mod1_window = module1_data.loc[(module1_data['time'] >= start_time) & (module1_data['time'] <= end_time)]
+
+    # Check if motion is detected and note the distance
+    mod1_motion_detected_flag = (mod1_window['motion'] == 1).sum() >= motion_sensitivity  # Require at least 3 motion detections in the window
+    mod1_animal_distance = mod1_window['distance'].min() # Taking the minimum distance in the window
+
+    # TODO: add time column in cam.csv
+    # Filter camera dataframe to only include rows within the current window
+    cam_window = cam_data.loc[(cam_data['time'] >= start_time) & (cam_data['time'] <= end_time)]
+    # Turn the flag ON if animal is detected from the camera in the window
+    animal_surity = cam_window.loc[(cam_window['confidence'] > 0.75) & (cam_window['class'] == 'animal')].shape[0]
+    animal_visual_confirmation_flag = animal_surity >= camera_sensitivity
+
+    # TODO: take confirmation and code below logic for severity
+    # since we cannot detect no of animals, the severity here will be different.
+    # if both module and camera detects animal and distance is in valid range, severity = 3 (highest)
+    # if only 1 module and camera detects animal, severity = 2
+    # if camera doest detect and module detects or vice versa, severity = 1
+    # otherwise severity = 0
+
+    # TODO: code to check if motion is detected and to calculate distance must be run in parallel for each module
+
     return 1, 1
 
 
