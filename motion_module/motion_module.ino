@@ -7,11 +7,11 @@
 #define ECHO_PIN 18
 #define SOUND_SPEED 0.034
 #define CM_TO_INCH 0.393701
-#define MODULE_ID 1
-const char* ssid = "RAJTILAK-DELL 8168";  
-const char* password = "25102015";  
+#define MODULE_ID 2
+const char* ssid = "Connect to Cosmos";  
+const char* password = "11669900";  
 
-const char* serverName = "http://192.168.137.41:5000/module";
+const char* serverName = "http://192.168.232.96:5000/module";
 StaticJsonDocument<200> doc;
 
 
