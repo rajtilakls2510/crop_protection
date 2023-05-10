@@ -6,10 +6,10 @@
 #define CAMERA_MODEL_AI_THINKER // Has PSRAM
 #include "camera_pins.h"
 
-const char* ssid = "Connect to Cosmos";
-const char* password = "11669900";
+const char* ssid = "RAJTILAK-ASUS 3112";
+const char* password = "25102015";
 
-String serverName = "192.168.232.96"; 
+String serverName = "192.168.137.155"; 
 String serverPath = "/cam";
 const int serverPort = 5000;
 
