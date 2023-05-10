@@ -16,6 +16,8 @@ module2_data = pd.DataFrame({"time": [], "motion": [], "distance": []})
 cam_data = pd.DataFrame({"time": [], "xmin": [], "ymin": [], "xmax": [], "ymax": [], "confidence": [], "class": []})
 severities = [0,0]
 
+max_history = 10
+
 
 cam_feed = cv2.imread("placeholder.png")
 mod1_override, mod2_override = False, False
@@ -33,21 +35,29 @@ def alarm_detector():
 
     # TODO: Process
     # Defining some of my own Hyperparameters, Variables, and Flags
-    window_size = 15
+    sensor_window_size = 12
+    cam_window_size = 5
     motion_sensitivity = 3
-    domestic_animals = ["cat", "dog", "horse", "sheep", "cow"]
+    domestic_animals = ["cat", "dog", "horse", "sheep", "cow", "person"]
     wild_animals = ["elephant", "bear", "zebra", "giraffe"]
-    severity = 0
     yolo_sensitivity = 0.35
-    try:
-        # Fetch rows from cam data within window size
-        sorted_df = cam_data.sort_values('time', ascending=False)
-        t0 = sorted_df.iloc[0]['time']
-        cam_window = sorted_df[(sorted_df['time'] >= t0) & (sorted_df['time'] <= t0+window_size)]
+    distance_sensitivity = 100
+    module1_motion_flag = False
+    module2_motion_flag = False
 
-        # Sort dataframes on time and fetch last rows of window size
-        module1_window = module1_data.sort_values('time').tail(window_size)
-        module2_window = module2_data.sort_values('time').tail(window_size)
+    try:
+        # Fetch rows from dataframes within window size
+        sorted_cam_df = cam_data.sort_values('time', ascending=False)
+        t0_cam = time.time()
+        cam_window = sorted_cam_df[(sorted_cam_df['time'] <= t0_cam) & (sorted_cam_df['time'] >= t0_cam-cam_window_size)]
+
+        sorted_mod1_df = module1_data.sort_values('time', ascending=False)
+        t0_mod1 = t0_cam
+        module1_window = sorted_mod1_df[sorted_mod1_df['time'] >= (t0_mod1-sensor_window_size)]
+
+        sorted_mod2_df = module2_data.sort_values('time', ascending=False)
+        t0_mod2 = t0_cam
+        module2_window = sorted_mod2_df[sorted_mod2_df['time'] >= (t0_mod2 - sensor_window_size)]
 
         # Module 1
         module1_motion_flag = (module1_window['motion'] == 1).sum() >= motion_sensitivity
@@ -60,48 +70,41 @@ def alarm_detector():
         # Camera
         domestic_rows = cam_window[cam_window['class'].isin(domestic_animals)]
         wild_rows = cam_window[cam_window['class'].isin(wild_animals)]
+        domestic_rows = domestic_rows[domestic_rows['confidence'] > yolo_sensitivity]
+        wild_rows = wild_rows[wild_rows['confidence'] > yolo_sensitivity]
         if not domestic_rows.empty:
-            confidence_domestic_animals = domestic_rows['confidence'].mean()
-            if (confidence_domestic_animals >= yolo_sensitivity):
-                count_domestic_animals = domestic_rows['class'].count()
-            else:
-                count_domestic_animals = 0
+            count_domestic_animals = domestic_rows.groupby(['time', 'class']).size().groupby("class").max().reset_index()[0].sum()
         else:
             count_domestic_animals = 0
         if not wild_rows.empty:
-            confidence_wild_animals = wild_rows['confidence'].mean()
-            if (confidence_wild_animals >= yolo_sensitivity):
-                count_wild_animals = wild_rows['class'].count()
-            else:
-                count_wild_animals = 0
+            count_wild_animals = wild_rows.groupby(['time', 'class']).size().groupby("class").max().reset_index()[0].sum()
         else:
             count_wild_animals = 0
 
         # Logic
         if count_domestic_animals == 0 and count_wild_animals == 0:
             severity = 0  # Level 0: No animals detected
-        elif count_domestic_animals < 5 and count_wild_animals == 0:
+        elif count_domestic_animals <= 5 and count_wild_animals < 1:
             severity = 1  # Level 1: Low alert, no wild animals
-        elif 5 <= count_domestic_animals < 20 or 1 < count_wild_animals < 5:
+        elif 5 <= count_domestic_animals <= 15 or 1 <= count_wild_animals <= 5:
             severity = 2  # Level 2: Moderate alert, few wild or some domestic animals
-        elif 20 <= count_domestic_animals < 50 or 5 <= count_wild_animals < 10:
+        else:
             severity = 3  # Level 3: High alert, huge animals
-        elif count_domestic_animals >= 50 or count_wild_animals >= 10:
-            severity = 4  # Level 4: Extreme alert, CM ko jaga do
 
         # Return logic
-        if (module1_distance > 250):
+        if (module1_distance > distance_sensitivity):
             module1_motion_flag = False
-        if (module2_distance > 250):
+        if (module2_distance > distance_sensitivity):
             module2_motion_flag = False
-        if module1_motion_flag and module2_motion_flag:
+        if (module1_motion_flag or module1_distance <= distance_sensitivity) and (module2_motion_flag or module2_distance <= distance_sensitivity):
             return severity, severity
-        elif module1_motion_flag:
+        elif (module1_motion_flag or module1_distance <= distance_sensitivity):
             return severity, 0
-        elif module2_motion_flag:
+        elif (module2_motion_flag or module2_distance <= distance_sensitivity):
             return 0, severity
         else:
-            return 0,0
+            return 0, 0
+
     except Exception as e:
         print("The error is: ", e)
         return severities
@@ -123,14 +126,12 @@ def override():
     global mod1_override, mod2_override
     module = int(request.form["module"])
     override = request.form["override"] == "true"
-    print(mod1_override, mod2_override)
     if module == 1:
         mod1_override = override
         mod1_feed["manual"] = mod1_override
     else:
         mod2_override = override
         mod2_feed["manual"] = mod2_override
-    print(mod1_override, mod2_override)
     return "Done"
 
 
@@ -172,12 +173,16 @@ def module():
     module1_data.to_csv("mod1.csv", index=False)  # TODO: Comment in production
     module2_data.to_csv("mod2.csv", index=False)  # TODO: Comment in production
     new_severities = alarm_detector()
-    if module == 1 and not mod1_override and new_severities[0] > 0 and severities[0] == 0:
-        mod1_feed["history"].append({"time": time.time(), "severity": new_severities[0]})
+    if module == 1 and not mod1_override:
+        if new_severities[0] > 0 and severities[0] == 0:
+            mod1_feed["history"].append({"time": time.time(), "severity": new_severities[0]})
+            mod1_feed["history"] = mod1_feed["history"][-max_history:]
         severities[0] = new_severities[0]
         mod1_feed["severity"] = severities[0]
-    if module == 2 and not mod2_override and new_severities[1] > 0 and severities[1] == 0:
-        mod2_feed["history"].append({"time": time.time(), "severity": new_severities[1]})
+    if module == 2 and not mod2_override:
+        if new_severities[1] > 0 and severities[1] == 0:
+            mod2_feed["history"].append({"time": time.time(), "severity": new_severities[1]})
+            mod2_feed["history"] = mod2_feed["history"][-max_history:]
         severities[1] = new_severities[1]
         mod2_feed["severity"] = severities[1]
     module_lock.release()
